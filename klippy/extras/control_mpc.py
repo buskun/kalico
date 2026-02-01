@@ -2,7 +2,6 @@ import logging
 import math
 
 AMBIENT_TEMP = 25.0
-PIN_MIN_TIME = 0.100
 
 FILAMENT_TEMP_SRC_AMBIENT = "ambient"
 FILAMENT_TEMP_SRC_FIXED = "fixed"
@@ -614,7 +613,10 @@ class MpcCalibrate:
         else:
             for idx in range(0, fan_breakpoints):
                 speed = idx / (fan_breakpoints - 1)
+<<<<<<< HEAD
+=======
                 curtime = self.heater.reactor.monotonic()
+>>>>>>> c70d21abd88757a6653f5081a125ea26be13c2be
                 fan.set_speed(speed)
                 gcmd.respond_info("Waiting for temperature to stabilize")
                 self.wait_stable(3)
@@ -628,7 +630,10 @@ class MpcCalibrate:
                     f"{speed * 100.0:.0f}% fan average power: {power:.2f} W"
                 )
                 fan_powers.append((speed, power))
+<<<<<<< HEAD
+=======
             curtime = self.heater.reactor.monotonic()
+>>>>>>> c70d21abd88757a6653f5081a125ea26be13c2be
             fan.set_speed(0.0)
             power_base = fan_powers[0][1]
 
