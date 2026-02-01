@@ -562,6 +562,7 @@ class GCodeIO:
             self.printer.request_exit("error_exit")
 
     m112_r = re.compile(r"^(?:[nN][0-9]+)?\s*[mM]112(?:\s|$)")
+        
 
     def _process_data(self, eventtime):
         # Read input, separate by newline, and add to pending_commands
@@ -572,7 +573,7 @@ class GCodeIO:
             return
         self.input_log.append((eventtime, data))
         self.bytes_read += len(data)
-        lines = data.split("\n")
+        lines = re.sub(r'(?m)^([^;\n]*)\\\n', r'\1', data).split('\n')
         lines[0] = self.partial_input + lines[0]
         self.partial_input = lines.pop()
         pending_commands = self.pending_commands
