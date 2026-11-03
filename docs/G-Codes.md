@@ -1255,6 +1255,63 @@ corresponding settings from the
 - `MIN_TAP_QUALITY=<percent>`
 - `DECOMPRESSION_ANGLE=<angle>`
 
+### LOAD_CELL_PROBE_CALIBRATE
+`LOAD_CELL_PROBE_CALIBRATE CALIBRATION=<calibration_type> [<parameters>]`: 
+Run automated calibration routines for load cell probe parameters. All calibrations
+probe a bed mesh and save results for the current session (use `SAVE_CONFIG` to persist).
+
+Available calibration types:
+- `DRIFT_FILTER`: Calibrate drift_filter_cutoff_frequency
+- `TAP_PERFORMANCE`: Calibrate pullback_distance and decompression_angle
+
+All calibrations accept [BED_MESH_CALIBRATE](#bed_mesh_calibrate) parameters for 
+controlling mesh point generation (PROFILE, MESH_MIN, MESH_MAX, PROBE_COUNT, ALGORITHM, etc.).
+See [Load Cell Calibration](Load_Cell.md#calibration) for detailed usage and examples.
+
+#### DRIFT_FILTER Calibration
+`LOAD_CELL_PROBE_CALIBRATE CALIBRATION=DRIFT_FILTER [MAXIMUM_Z_POSITION=<pos>] 
+[MAX_Z_VELOCITY=<vel>] [APPROACH_SPEED=<speed>] [SEGMENT_DURATION=<duration>] 
+[SLOPE_PERCENTILE=<pct>] [MAX_DRIFT_RATE=<drift_rate>] 
+[MAX_CUTOFF_FREQUENCY=<freq>] [CUTOFF_INCREMENT=<inc>] [<bed_mesh_parameters>]`
+
+Calibrates the drift filter cutoff frequency by measuring force drift during slow Z 
+descents at each mesh point. The drift filter removes slow force changes caused by 
+bowden tube movement, keeping the signal centered on zero.
+
+- **MAXIMUM_Z_POSITION**: Starting height for drift measurement. If not specified, 
+  defaults to the printer's maximum Z position (the delta Z limit on delta printers).
+- **MAX_Z_VELOCITY**: Maximum speed for Z moves between points. If not specified, 
+  defaults to the kinematics `max_z_velocity`.
+- **APPROACH_SPEED**: Descent speed in mm/s during measurement (slower collects more 
+  data). The default is 10.0 or `MAX_Z_VELOCITY`, whichever is lower.
+  Values above `MAX_Z_VELOCITY` are limited to it.
+- **SEGMENT_DURATION**: Time window in seconds for drift analysis. The default is 5.0.
+- **SLOPE_PERCENTILE**: Which percentile of slopes must meet criteria (higher is 
+  stricter). The default is 99.0 (valid range: 0-100).
+- **MAX_DRIFT_RATE**: Maximum acceptable drift rate in grams/second. The 
+  default is 1.0.
+- **MAX_CUTOFF_FREQUENCY**: Upper limit for filter frequency in Hz. The default is 20.0.
+- **CUTOFF_INCREMENT**: Step size in Hz when searching for optimal frequency. The 
+  default is 0.1.
+
+See [Drift Filter Calibration](Load_Cell.md#drift-filter-calibration)
+
+#### TAP_PERFORMANCE Calibration
+`LOAD_CELL_PROBE_CALIBRATE CALIBRATION=TAP_PERFORMANCE [PULLBACK_DISTANCE=<dist>]
+[<bed_mesh_parameters>]`
+
+Optimizes the `pullback_distance` parameter by measuring actual decompression distances during 
+normal probing across the bed. Computes a safe minimum using statistical analysis:
+`(mean + 3σ) × 2.0`.
+
+Then calibrates the `decompression_angle` used by the tap quality classifier from the
+same taps. The calibration fails if any tap does not pass the quality check.
+
+- **PULLBACK_DISTANCE**: Temporary pullback distance in mm to use during calibration 
+  testing. The default is 1.0 (valid range: 0.5-2.0).
+
+See [Tap Performance Calibration](Load_Cell.md#tap-performance-calibration) and [Decompression Angle Calibration](Load_Cell.md#decompression-angle-calibration) for choosing thresholds and interpreting results.
+
 ### [manual_probe]
 
 The manual_probe module is automatically loaded.
@@ -2337,6 +2394,52 @@ the config.
 - `REF_TEMP` manually overrides the reference temperature typically set during
 homing (for use in e.g. non-standard homing routines) - will be reset
 automatically upon homing.
+
+#### Z_THERMAL_ADJUST_CALIBRATE
+`Z_THERMAL_ADJUST_CALIBRATE CALIBRATION=NOZZLE HEATER=<heater>
+ [COMPONENT=name] [PROBE=<probe>] [MIN_TEMP=<value>] [MAX_TEMP=<value>]
+ [MEASUREMENTS=<count>] [SOAK_TIME=<seconds>]
+ [Z_LIFT=<mm>] [Z_LIFT_SPEED=<mm/s>]`: Measures the
+thermal expansion of the nozzle and calculates the `temp_coeff` for the
+`[z_thermal_adjust]` section. The printer must be homed and the nozzle must be
+positioned over a clean spot on the bed where probing is possible.
+The command heats the nozzle from `MIN_TEMP` up to `MAX_TEMP`, and then back
+down to `MIN_TEMP` for a complete thermal cycle. It splits the temperature range
+into `MEASUREMENTS` steps. Each step starts with a pause for `SOAK_TIME`, probes
+to measure the nozzle and lifts the toolhead by `Z_LIFT` to resume heating. The
+heater is turned off when the command finishes or fails.
+A linear regression of the probe results against temperature gives the coefficient,
+which is reported and stored as the section's `temp_coeff`. Run `SAVE_CONFIG`
+to write it to the config file and restart. See also
+[Nozzle Temperature Compensation](Load_Cell.md#nozzle-temperature-compensation).
+
+- `CALIBRATION`: The type of calibration routine to run. Required. Only `NOZZLE` is currently
+supported; `FRAME` is reserved for future use.
+- `HEATER`: The name of the heater to calibrate with, typically `extruder`. Required.
+- `COMPONENT`: if multiple thermal adjustment are defined use `COMPONENT` to
+specify which one to calibrate.
+- `PROBE`: The probe to measure with, if more than one probe is configured.
+- `MIN_TEMP`: The lowest temperature to measure at. The default is 140.
+- `MAX_TEMP`: The highest temperature to measure at. It must be greater than
+`MIN_TEMP`. The default is 250.
+- `MEASUREMENTS`: The number of distinct temperatures to measure
+at between `MIN_TEMP` and `MAX_TEMP`, inclusive. The minimum is 2 and the
+default is 10. Each temperature is measured twice, once while heating and 
+once while cooling.
+- `SOAK_TIME`: Seconds to wait after the heater reaches each temperature, to
+let the nozzle and heatbreak reach thermal equilibrium. The default is 20.
+- `Z_LIFT`: Distance in mm to raise the toolhead after each probe. The default
+is 10.
+- `Z_LIFT_SPEED`: Speed in mm/s of the lift move. The default is 5.
+
+When the calculation completes the command reports the total elongation and
+temperature range measured and the resulting temperature coefficient. It also
+saves a plot of the measurements and fitted line as
+`nozzle_elongation_YYYY-MM-DD_HH-MM-SS.png` in the same directory as the
+Klipper log file, and prints a link to it (the link assumes
+[Moonraker](https://github.com/Arksine/moonraker) serves the `logs` root).
+Plotting requires `matplotlib` and a configured log file; if there is no log
+file the plot is skipped.
 
 ### ⚠️ [z_calibration]
 
